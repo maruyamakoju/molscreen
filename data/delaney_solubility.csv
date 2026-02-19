@@ -1,0 +1,31 @@
+smiles,compound,measured_log_solubility_mol_l
+c1ccccc1,Benzene,-2.13
+CCO,Ethanol,-0.18
+c1ccc(cc1)O,Phenol,-1.46
+CC(=O)Oc1ccccc1C(=O)O,Aspirin,-1.58
+c1ccc(cc1)N,Aniline,-1.04
+CCCCCCCC(=O)O,Octanoic acid,-3.05
+CCC(CC)CO,2-Ethyl-1-butanol,-0.77
+c1ccc(c(c1)O)O,Catechol,-0.67
+CC(C)(C)c1ccc(cc1)O,4-tert-Butylphenol,-2.68
+CC(C)c1ccccc1,Cumene,-3.70
+c1ccc2c(c1)ccc3c2ccc4c3cccc4,Benzo[a]pyrene,-7.87
+COc1cc(ccc1O)C=O,Vanillin,-1.35
+c1ccc(cc1)C(=O)O,Benzoic acid,-1.87
+CCc1ccccc1,Ethylbenzene,-3.15
+CCCc1ccccc1,Propylbenzene,-3.69
+c1ccc(cc1)c2ccccc2,Biphenyl,-4.46
+CCc1ccccc1O,2-Ethylphenol,-2.08
+Cc1ccccc1,Toluene,-2.73
+Cc1ccccc1O,o-Cresol,-1.48
+c1ccc(cc1)CO,Benzyl alcohol,-0.79
+CCCC,Butane,-2.51
+CCC,Propane,-1.81
+CC,Ethane,-1.09
+c1ccc(cc1)Cl,Chlorobenzene,-2.98
+CC(C)O,Isopropanol,-0.28
+CCCO,1-Propanol,-0.42
+c1ccc(cc1)N(C)C,N,N-Dimethylaniline,-1.83
+c1ccc(cc1)CC,Ethylbenzene,-3.08
+COc1ccccc1,Anisole,-1.85
+Cc1ccc(cc1)O,p-Cresol,-1.95
