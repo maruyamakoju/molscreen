@@ -73,6 +73,46 @@ The GitHub Actions workflow will automatically:
 
 You can monitor the workflow progress in the **Actions** tab of your GitHub repository.
 
+## Docker
+
+### Build
+
+```bash
+docker build -t molscreen .
+```
+
+### Usage Examples
+
+```bash
+# Analyze a molecule (ethanol)
+docker run --rm molscreen predict "CCO"
+
+# Save reports to files in current directory
+docker run --rm -v $(pwd):/data molscreen predict "CCO" --json /data/output.json --html /data/output.html
+
+# Check Lipinski's Rule of Five
+docker run --rm molscreen lipinski "CC(=O)Oc1ccccc1C(=O)O"
+
+# Predict solubility
+docker run --rm molscreen solubility "c1ccccc1"
+
+# Get molecular properties only
+docker run --rm molscreen properties "CCO"
+```
+
+### Using docker-compose
+
+```bash
+# Show help
+docker compose run molscreen --help
+
+# Analyze a molecule
+docker compose run molscreen predict "CCO"
+
+# Use with file output
+docker compose run molscreen predict "CCO" --json /data/output.json
+```
+
 ## Quick Start
 
 ### Command Line Interface
