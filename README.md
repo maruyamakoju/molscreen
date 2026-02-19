@@ -7,6 +7,8 @@ SMILES-based drug candidate screening tool with RDKit + ML
 - **Molecular Property Calculations**: Calculate molecular weight, LogP, hydrogen bond donors/acceptors using RDKit
 - **Lipinski's Rule of Five**: Automatic drug-likeness assessment
 - **Solubility Prediction**: QSAR model trained on Delaney/ESOL dataset using scikit-learn
+- **Molecular Similarity Search**: Find similar molecules using Tanimoto coefficients and Morgan fingerprints
+- **Diversity Picking**: Select diverse molecular subsets using MaxMin algorithm
 - **Multiple Output Formats**: Console output, JSON, and HTML reports
 - **CLI and Python API**: Use from command line or integrate into Python code
 
@@ -98,6 +100,12 @@ molscreen predict "CCO" --no-solubility
 
 # Quiet mode (only save to files)
 molscreen predict "CCO" --json output.json --quiet
+
+# Find similar molecules
+molscreen similar --query "CCO" --candidates molecules.csv --top 5
+
+# Find similar molecules and save to file
+molscreen similar --query "CCO" --candidates molecules.csv --top 10 --output results.csv
 ```
 
 ### Python API
@@ -128,6 +136,33 @@ results = generate_full_report(
     json_path="report.json",
     html_path="report.html"
 )
+
+# Molecular similarity search
+from molscreen.similarity import (
+    compute_fingerprint,
+    tanimoto_similarity,
+    rank_by_similarity,
+    find_diverse_subset
+)
+
+# Compute fingerprint
+fp = compute_fingerprint("CCO")
+
+# Calculate similarity between two molecules
+similarity = tanimoto_similarity("CCO", "CCCO")
+print(f"Tanimoto similarity: {similarity:.3f}")
+
+# Rank candidates by similarity to query
+query = "CCO"
+candidates = ["CCCO", "CCCCO", "c1ccccc1", "CC(C)C"]
+results = rank_by_similarity(query, candidates, top_k=3)
+for smiles, score in results:
+    print(f"{smiles}: {score:.3f}")
+
+# Find diverse subset using MaxMin picking
+molecules = ["CCO", "CCCO", "c1ccccc1", "CC(C)C", "CC(=O)O"]
+diverse = find_diverse_subset(molecules, n=3, threshold=0.4)
+print(f"Diverse subset: {diverse}")
 ```
 
 ## Output Example
@@ -189,6 +224,26 @@ A molecule is considered drug-like if it satisfies:
 - **Performance**: R² = 0.90 on test set, RMSE = 0.59
 - **Output**: LogS (log10 of solubility in mol/L)
 
+### Molecular Similarity
+
+- **Fingerprints**: Morgan (circular) fingerprints with radius=2, n_bits=2048
+- **Similarity Metric**: Tanimoto coefficient (range: 0.0-1.0)
+- **Use Cases**: Virtual screening, compound clustering, scaffold hopping
+- **Diversity Picking**: MaxMin algorithm for selecting diverse molecular subsets
+
+#### CSV Input Format
+
+The `similar` command expects a CSV file with a column named `SMILES` or `smiles`:
+
+```csv
+SMILES
+CCO
+CCCO
+CCCCO
+c1ccccc1
+CC(C)C
+```
+
 ## Development
 
 ### Running Tests
@@ -212,6 +267,7 @@ molscreen/
 ├── cli.py               # Command-line interface
 ├── properties.py        # Molecular property calculations
 ├── models.py            # QSAR solubility prediction
+├── similarity.py        # Molecular similarity search
 ├── report.py            # Report generation (JSON/HTML)
 ├── data/
 │   └── delaney.csv      # Training dataset
@@ -221,6 +277,7 @@ molscreen/
 tests/
 ├── test_properties.py   # Property calculation tests
 ├── test_models.py       # QSAR model tests
+├── test_similarity.py   # Similarity search tests
 └── test_cli.py          # CLI tests
 ```
 
