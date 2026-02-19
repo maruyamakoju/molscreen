@@ -6,6 +6,7 @@ This module provides the CLI commands for molecular screening.
 
 import sys
 import click
+import pandas as pd
 from molscreen.properties import calculate_properties, check_lipinski, MoleculeError
 from molscreen.models import predict_solubility
 from molscreen.report import (
@@ -13,6 +14,12 @@ from molscreen.report import (
     format_console_output,
     save_json_report,
     save_html_report
+)
+from molscreen.filters import (
+    lipinski_filter,
+    veber_filter,
+    pains_filter,
+    filter_molecules
 )
 from molscreen import __version__
 
@@ -201,6 +208,178 @@ def solubility(smiles):
     except MoleculeError as e:
         click.echo(f"Error: Invalid SMILES string: {e}", err=True)
         sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--smiles', '-s', type=str,
+              help='SMILES string to filter')
+@click.option('--input', '-i', 'input_file', type=click.Path(exists=True),
+              help='Input CSV file with SMILES column')
+@click.option('--output', '-o', 'output_file', type=click.Path(),
+              help='Output CSV file for results')
+@click.option('--rules', '-r', type=str, default='all',
+              help='Comma-separated filter rules (lipinski,veber,pains) or "all"')
+@click.option('--quiet', '-q', is_flag=True,
+              help='Suppress console output')
+def filter(smiles, input_file, output_file, rules, quiet):
+    """
+    Apply pharmacokinetic filters to molecules.
+
+    This command filters molecules using drug-likeness criteria:
+    - Lipinski's Rule of Five (oral bioavailability)
+    - Veber rules (TPSA and rotatable bonds)
+    - PAINS detection (assay interference)
+
+    You can either filter a single SMILES string or batch process a CSV file.
+
+    Examples:
+
+        molscreen filter --smiles "CCO" --rules lipinski,veber
+
+        molscreen filter --smiles "CC(=O)Oc1ccccc1C(=O)O" --rules all
+
+        molscreen filter --input molecules.csv --output filtered.csv --rules all
+    """
+    try:
+        # Parse rules
+        if rules.lower() == 'all':
+            rules_list = ['lipinski', 'veber', 'pains']
+        else:
+            rules_list = [r.strip().lower() for r in rules.split(',')]
+
+        # Validate rules
+        valid_rules = {'lipinski', 'veber', 'pains'}
+        for rule in rules_list:
+            if rule not in valid_rules:
+                click.echo(f"Error: Invalid rule '{rule}'. Valid rules: {', '.join(valid_rules)}", err=True)
+                sys.exit(1)
+
+        # Single SMILES mode
+        if smiles:
+            if input_file:
+                click.echo("Error: Cannot specify both --smiles and --input", err=True)
+                sys.exit(1)
+
+            results = filter_molecules([smiles], rules=rules_list)
+            result = results[0]
+
+            if not result['valid']:
+                click.echo(f"Error: {result.get('error', 'Invalid SMILES')}", err=True)
+                sys.exit(1)
+
+            # Display results
+            if not quiet:
+                click.echo("=" * 60)
+                click.echo("MOLECULAR FILTER RESULTS")
+                click.echo("=" * 60)
+                click.echo(f"\nSMILES: {smiles}")
+                click.echo(f"\nOverall: {'✓ PASS' if result['overall_pass'] else '✗ FAIL'}")
+
+                for rule_name, rule_result in result['filters'].items():
+                    click.echo(f"\n--- {rule_name.upper()} Filter ---")
+                    click.echo(f"  Status: {'✓ Pass' if rule_result['passes'] else '✗ Fail'}")
+
+                    if rule_result['violations']:
+                        click.echo("  Violations:")
+                        for violation in rule_result['violations']:
+                            click.echo(f"    - {violation}")
+
+                    if rule_result['values']:
+                        click.echo("  Values:")
+                        for key, value in rule_result['values'].items():
+                            if isinstance(value, float):
+                                click.echo(f"    {key}: {value:.2f}")
+                            else:
+                                click.echo(f"    {key}: {value}")
+
+                click.echo("\n" + "=" * 60)
+
+            # Save to CSV if requested
+            if output_file:
+                df = pd.DataFrame([{
+                    'SMILES': result['smiles'],
+                    'Valid': result['valid'],
+                    'Overall_Pass': result['overall_pass'],
+                    **{f'{rule}_Pass': result['filters'][rule]['passes'] for rule in rules_list},
+                    **{f'{rule}_Violations': ', '.join(result['filters'][rule]['violations']) for rule in rules_list}
+                }])
+                df.to_csv(output_file, index=False)
+                if not quiet:
+                    click.echo(f"Results saved to: {output_file}")
+
+            sys.exit(0 if result['overall_pass'] else 1)
+
+        # Batch CSV mode
+        elif input_file:
+            # Read input CSV
+            try:
+                df = pd.read_csv(input_file)
+            except Exception as e:
+                click.echo(f"Error reading CSV file: {e}", err=True)
+                sys.exit(1)
+
+            if 'SMILES' not in df.columns:
+                click.echo("Error: Input CSV must have a 'SMILES' column", err=True)
+                sys.exit(1)
+
+            smiles_list = df['SMILES'].tolist()
+
+            if not quiet:
+                click.echo(f"Processing {len(smiles_list)} molecules...")
+
+            # Apply filters
+            results = filter_molecules(smiles_list, rules=rules_list)
+
+            # Prepare output data
+            output_data = []
+            for result in results:
+                row = {
+                    'SMILES': result['smiles'],
+                    'Valid': result['valid'],
+                    'Overall_Pass': result['overall_pass']
+                }
+
+                if result['valid']:
+                    for rule in rules_list:
+                        rule_result = result['filters'][rule]
+                        row[f'{rule}_Pass'] = rule_result['passes']
+                        row[f'{rule}_Violations'] = ', '.join(rule_result['violations']) if rule_result['violations'] else ''
+
+                        # Add values
+                        for key, value in rule_result['values'].items():
+                            row[f'{rule}_{key}'] = value
+                else:
+                    row['Error'] = result.get('error', 'Unknown error')
+
+                output_data.append(row)
+
+            output_df = pd.DataFrame(output_data)
+
+            # Save or display
+            if output_file:
+                output_df.to_csv(output_file, index=False)
+                if not quiet:
+                    click.echo(f"Results saved to: {output_file}")
+            elif not quiet:
+                # Display summary
+                valid_count = sum(1 for r in results if r['valid'])
+                pass_count = sum(1 for r in results if r.get('overall_pass', False))
+
+                click.echo(f"\nProcessed: {len(results)} molecules")
+                click.echo(f"Valid: {valid_count}")
+                click.echo(f"Passed all filters: {pass_count}")
+                click.echo(f"\nFirst 10 results:")
+                click.echo(output_df.head(10).to_string())
+
+            sys.exit(0)
+
+        else:
+            click.echo("Error: Must specify either --smiles or --input", err=True)
+            sys.exit(1)
+
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
