@@ -5,6 +5,7 @@ This module provides the CLI commands for molecular screening.
 """
 
 import sys
+import os
 import click
 from molscreen.properties import calculate_properties, check_lipinski, MoleculeError
 from molscreen.models import predict_solubility
@@ -13,6 +14,11 @@ from molscreen.report import (
     format_console_output,
     save_json_report,
     save_html_report
+)
+from molscreen.benchmark import (
+    run_qsar_benchmark,
+    run_solubility_benchmark,
+    run_bbbp_benchmark
 )
 from molscreen import __version__
 
@@ -200,6 +206,99 @@ def solubility(smiles):
 
     except MoleculeError as e:
         click.echo(f"Error: Invalid SMILES string: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--dataset', '-d', default='delaney',
+              help='Dataset to use: "delaney", "bbbp", or path to CSV file')
+@click.option('--target', '-t', type=str,
+              help='Target column name (required for custom datasets)')
+@click.option('--smiles', '-s', type=str, default='smiles',
+              help='SMILES column name (default: "smiles")')
+@click.option('--cv', type=int, default=5,
+              help='Number of cross-validation folds (default: 5)')
+def benchmark(dataset, target, smiles, cv):
+    """
+    Run QSAR model benchmarks on datasets.
+
+    This command evaluates QSAR models using cross-validation on benchmark
+    datasets. Built-in datasets include:
+
+    - delaney: Delaney solubility dataset (regression, 30 molecules)
+    - bbbp: Blood-brain barrier permeability dataset (classification, 50 molecules)
+
+    You can also specify a custom CSV file with --dataset and provide
+    --target and --smiles column names.
+
+    Examples:
+
+        molscreen benchmark --dataset delaney
+
+        molscreen benchmark --dataset bbbp
+
+        molscreen benchmark --dataset /path/to/data.csv --target activity --smiles smiles
+    """
+    try:
+        # Handle built-in datasets
+        if dataset == 'delaney':
+            click.echo("Running benchmark on Delaney solubility dataset...")
+            click.echo("=" * 60)
+            results = run_solubility_benchmark(cv=cv)
+        elif dataset == 'bbbp':
+            click.echo("Running benchmark on BBBP dataset...")
+            click.echo("=" * 60)
+            results = run_bbbp_benchmark(cv=cv)
+        else:
+            # Custom dataset
+            if not os.path.exists(dataset):
+                click.echo(f"Error: Dataset file not found: {dataset}", err=True)
+                sys.exit(1)
+
+            if target is None:
+                click.echo("Error: --target option is required for custom datasets", err=True)
+                sys.exit(1)
+
+            click.echo(f"Running benchmark on custom dataset: {dataset}")
+            click.echo("=" * 60)
+            results = run_qsar_benchmark(
+                dataset_path=dataset,
+                target_col=target,
+                smiles_col=smiles,
+                cv=cv
+            )
+
+        # Display results
+        click.echo(f"\nBenchmark Results:")
+        click.echo("-" * 60)
+        click.echo(f"  Dataset:        {results.get('dataset_path', dataset)}")
+        click.echo(f"  Task Type:      {results['task_type']}")
+        click.echo(f"  Samples:        {results['n_samples']}")
+        click.echo(f"  Features:       {results['n_features']}")
+        click.echo(f"  CV Folds:       {results['cv_folds']}")
+        click.echo()
+
+        if results['task_type'] == 'regression':
+            click.echo("  Metrics (Regression):")
+            click.echo(f"    R² Score:     {results['r2_mean']:.4f} ± {results['r2_std']:.4f}")
+            click.echo(f"    RMSE:         {results['rmse_mean']:.4f} ± {results['rmse_std']:.4f}")
+        else:
+            click.echo("  Metrics (Classification):")
+            click.echo(f"    Accuracy:     {results['accuracy_mean']:.4f} ± {results['accuracy_std']:.4f}")
+            if results.get('auc_mean') is not None:
+                click.echo(f"    ROC-AUC:      {results['auc_mean']:.4f} ± {results['auc_std']:.4f}")
+
+        click.echo("=" * 60)
+        sys.exit(0)
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
