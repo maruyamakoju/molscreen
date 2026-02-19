@@ -5,6 +5,7 @@ This package provides:
 - Molecular property calculations using RDKit
 - Solubility prediction using QSAR models
 - Lipinski's Rule of Five compliance checking
+- Pharmacokinetic filters (Lipinski, Veber, PAINS)
 - HTML/JSON report generation
 - CLI and Python API interfaces
 """
@@ -16,8 +17,18 @@ from molscreen.properties import (
     calculate_properties,
     check_lipinski,
 )
+from molscreen.filters import (
+    lipinski_filter,
+    veber_filter,
+    pains_filter,
+    filter_molecules,
+)
 
 __all__ = [
     "calculate_properties",
     "check_lipinski",
+    "lipinski_filter",
+    "veber_filter",
+    "pains_filter",
+    "filter_molecules",
 ]
