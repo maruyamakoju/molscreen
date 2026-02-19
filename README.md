@@ -7,7 +7,8 @@ SMILES-based drug candidate screening tool with RDKit + ML
 - **Molecular Property Calculations**: Calculate molecular weight, LogP, hydrogen bond donors/acceptors using RDKit
 - **Lipinski's Rule of Five**: Automatic drug-likeness assessment
 - **Solubility Prediction**: QSAR model trained on Delaney/ESOL dataset using scikit-learn
-- **Multiple Output Formats**: Console output, JSON, and HTML reports
+- **ADMET Prediction**: Comprehensive absorption, distribution, metabolism, excretion, and toxicity profiling using rule-based classification
+- **Multiple Output Formats**: Console output, JSON, HTML reports, and CSV batch processing
 - **CLI and Python API**: Use from command line or integrate into Python code
 
 ## Installation
@@ -93,6 +94,12 @@ molscreen lipinski "CC(=O)Oc1ccccc1C(=O)O"
 # Predict solubility
 molscreen solubility "c1ccccc1"
 
+# ADMET prediction (single molecule)
+molscreen admet --smiles "CC(=O)Oc1ccccc1C(=O)O"
+
+# ADMET batch processing
+molscreen admet --input molecules.csv --output admet_results.csv
+
 # Skip solubility prediction for faster results
 molscreen predict "CCO" --no-solubility
 
@@ -105,6 +112,7 @@ molscreen predict "CCO" --json output.json --quiet
 ```python
 from molscreen.properties import calculate_properties, check_lipinski
 from molscreen.models import predict_solubility
+from molscreen.admet import predict_admet
 from molscreen.report import generate_full_report
 
 # Calculate molecular properties
@@ -121,6 +129,12 @@ print(f"Passes Lipinski: {lipinski['passes_lipinski']}")
 solubility = predict_solubility(smiles)
 print(f"LogS: {solubility['logS']:.2f}")
 print(f"Interpretation: {solubility['interpretation']}")
+
+# Predict ADMET properties
+admet = predict_admet(smiles)
+print(f"BBB Penetrant: {admet['distribution']['bbb_penetrant']}")
+print(f"Overall ADMET Score: {admet['overall_score']:.2f}")
+print(f"hERG Alert: {admet['toxicity']['herg_alert']}")
 
 # Generate complete report
 results = generate_full_report(
@@ -189,6 +203,40 @@ A molecule is considered drug-like if it satisfies:
 - **Performance**: R² = 0.90 on test set, RMSE = 0.59
 - **Output**: LogS (log10 of solubility in mol/L)
 
+### ADMET Prediction
+
+Comprehensive ADMET (Absorption, Distribution, Metabolism, Excretion, Toxicity) profiling using rule-based classification with RDKit descriptors and SMARTS pattern matching. No external APIs required.
+
+#### Absorption
+- **Caco-2 Permeability**: Classified as 'high' if LogP > 0 AND TPSA < 140, otherwise 'low'
+- **Bioavailability (Ro5)**: Lipinski's Rule of Five compliance
+
+#### Distribution
+- **BBB Penetration**: Predicts blood-brain barrier penetration (MW < 450, LogP 0-3, TPSA < 90)
+- **Volume of Distribution**: Classified as 'low' (LogP < 1), 'medium' (LogP 1-3), or 'high' (LogP > 3)
+
+#### Metabolism
+- **CYP450 Alerts**: Detects structural alerts for CYP450 liability using SMARTS patterns:
+  - Thiols, imidazoles, furans, thiophenes
+
+#### Excretion
+- **Renal Clearance**: Predicts likelihood of renal clearance (likely if MW < 300 AND LogP < 2)
+
+#### Toxicity
+- **hERG Alert**: Predicts hERG channel inhibition risk (basic nitrogen AND (LogP > 3 OR MW > 300))
+- **Ames Alert**: Detects mutagenicity alerts using SMARTS patterns:
+  - Nitro aromatics, aromatic amines, epoxides, aziridines
+- **Hepatotoxicity Alert**: Detects hepatotoxicity alerts:
+  - Quinones, epoxides, α,β-unsaturated carbonyls (Michael acceptors)
+
+#### Overall Score
+- **Range**: 0.0 to 1.0 (higher is better)
+- **Calculation**: Starts at 1.0 and subtracts weighted penalties for each risk factor
+- **Interpretation**:
+  - ≥0.7: LOW RISK - Good drug-like properties
+  - 0.5-0.7: MODERATE RISK - Some concerns identified
+  - <0.5: HIGH RISK - Multiple alerts detected
+
 ## Development
 
 ### Running Tests
@@ -212,6 +260,7 @@ molscreen/
 ├── cli.py               # Command-line interface
 ├── properties.py        # Molecular property calculations
 ├── models.py            # QSAR solubility prediction
+├── admet.py             # ADMET prediction
 ├── report.py            # Report generation (JSON/HTML)
 ├── data/
 │   └── delaney.csv      # Training dataset
@@ -221,6 +270,7 @@ molscreen/
 tests/
 ├── test_properties.py   # Property calculation tests
 ├── test_models.py       # QSAR model tests
+├── test_admet.py        # ADMET prediction tests
 └── test_cli.py          # CLI tests
 ```
 
