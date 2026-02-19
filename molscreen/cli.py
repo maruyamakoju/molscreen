@@ -6,6 +6,7 @@ This module provides the CLI commands for molecular screening.
 
 import sys
 import click
+import pandas as pd
 from molscreen.properties import calculate_properties, check_lipinski, MoleculeError
 from molscreen.models import predict_solubility
 from molscreen.report import (
@@ -14,6 +15,7 @@ from molscreen.report import (
     save_json_report,
     save_html_report
 )
+from molscreen.similarity import rank_by_similarity
 from molscreen import __version__
 
 
@@ -201,6 +203,90 @@ def solubility(smiles):
     except MoleculeError as e:
         click.echo(f"Error: Invalid SMILES string: {e}", err=True)
         sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--query', '-q', required=True,
+              help='Query molecule SMILES string')
+@click.option('--candidates', '-c', required=True, type=click.Path(exists=True),
+              help='CSV file containing candidate molecules (must have SMILES column)')
+@click.option('--top', '-t', default=10, type=int,
+              help='Number of top similar molecules to return (default: 10)')
+@click.option('--output', '-o', type=click.Path(),
+              help='Output CSV file (default: stdout)')
+def similar(query, candidates, top, output):
+    """
+    Find molecules similar to a query molecule.
+
+    This command computes molecular similarity using Tanimoto coefficients
+    based on Morgan fingerprints. It ranks candidate molecules by their
+    similarity to the query and returns the top matches.
+
+    The candidates CSV file must contain a column named 'SMILES' or 'smiles'
+    with molecular structures in SMILES format.
+
+    Examples:
+
+        molscreen similar --query "CCO" --candidates molecules.csv --top 5
+
+        molscreen similar -q "CC(=O)Oc1ccccc1C(=O)O" -c drugs.csv -t 10 -o results.csv
+    """
+    try:
+        # Read candidates CSV
+        try:
+            df = pd.read_csv(candidates)
+        except FileNotFoundError:
+            click.echo(f"Error: Candidates file not found: {candidates}", err=True)
+            sys.exit(1)
+        except Exception as e:
+            click.echo(f"Error reading CSV file: {e}", err=True)
+            sys.exit(1)
+
+        # Find SMILES column (case-insensitive)
+        smiles_column = None
+        for col in df.columns:
+            if col.lower() == 'smiles':
+                smiles_column = col
+                break
+
+        if smiles_column is None:
+            click.echo("Error: CSV file must contain a 'SMILES' or 'smiles' column", err=True)
+            sys.exit(1)
+
+        # Get candidate SMILES list
+        candidate_smiles = df[smiles_column].dropna().tolist()
+
+        if not candidate_smiles:
+            click.echo("Error: No valid SMILES found in candidates file", err=True)
+            sys.exit(1)
+
+        # Rank by similarity
+        try:
+            results = rank_by_similarity(query, candidate_smiles, top_k=top)
+        except MoleculeError as e:
+            click.echo(f"Error: Invalid query SMILES: {e}", err=True)
+            sys.exit(1)
+
+        if not results:
+            click.echo("No similar molecules found", err=True)
+            sys.exit(0)
+
+        # Create results DataFrame
+        results_df = pd.DataFrame(results, columns=['smiles', 'similarity_score'])
+
+        # Output results
+        if output:
+            results_df.to_csv(output, index=False)
+            click.echo(f"Results saved to: {output}")
+        else:
+            # Print to stdout
+            click.echo(results_df.to_csv(index=False))
+
+        sys.exit(0)
+
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
