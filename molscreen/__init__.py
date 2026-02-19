@@ -5,6 +5,7 @@ This package provides:
 - Molecular property calculations using RDKit
 - Solubility prediction using QSAR models
 - Lipinski's Rule of Five compliance checking
+- Scaffold analysis and diversity scoring
 - HTML/JSON report generation
 - CLI and Python API interfaces
 """
@@ -16,8 +17,18 @@ from molscreen.properties import (
     calculate_properties,
     check_lipinski,
 )
+from molscreen.scaffold import (
+    get_murcko_scaffold,
+    get_generic_scaffold,
+    group_by_scaffold,
+    scaffold_diversity_score,
+)
 
 __all__ = [
     "calculate_properties",
     "check_lipinski",
+    "get_murcko_scaffold",
+    "get_generic_scaffold",
+    "group_by_scaffold",
+    "scaffold_diversity_score",
 ]
