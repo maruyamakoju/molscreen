@@ -1,0 +1,5 @@
+CCO ethanol
+INVALID_SMILES bad_molecule
+CC(=O)Oc1ccccc1C(=O)O aspirin
+NOT_A_SMILES another_bad
+c1ccccc1 benzene
