@@ -5,9 +5,10 @@ Tests for molscreen.cli module.
 import os
 import tempfile
 import json
+import pandas as pd
 from click.testing import CliRunner
 import pytest
-from molscreen.cli import main, predict, properties, lipinski, solubility
+from molscreen.cli import main, predict, properties, lipinski, solubility, admet
 
 
 class TestCLIMain:
@@ -248,6 +249,147 @@ class TestSolubilityCommand:
         assert 'Error' in result.output
 
 
+class TestADMETCommand:
+    """Tests for admet command."""
+
+    def test_admet_command_with_smiles(self):
+        """Test admet command with single SMILES."""
+        runner = CliRunner()
+        result = runner.invoke(admet, ['--smiles', 'CCO'])
+        assert result.exit_code == 0
+        assert 'ADMET PREDICTION REPORT' in result.output
+        assert 'Absorption' in result.output
+        assert 'Distribution' in result.output
+        assert 'Metabolism' in result.output
+        assert 'Excretion' in result.output
+        assert 'Toxicity' in result.output
+        assert 'Overall Score' in result.output
+
+    def test_admet_command_aspirin(self):
+        """Test admet command with aspirin."""
+        runner = CliRunner()
+        result = runner.invoke(admet, ['--smiles', 'CC(=O)Oc1ccccc1C(=O)O'])
+        assert result.exit_code == 0
+        assert 'CC(=O)Oc1ccccc1C(=O)O' in result.output
+        assert 'Overall Score' in result.output
+
+    def test_admet_invalid_smiles(self):
+        """Test admet with invalid SMILES."""
+        runner = CliRunner()
+        result = runner.invoke(admet, ['--smiles', 'INVALID'])
+        assert result.exit_code == 1
+        assert 'Error' in result.output
+
+    def test_admet_help(self):
+        """Test admet command help text."""
+        runner = CliRunner()
+        result = runner.invoke(admet, ['--help'])
+        assert result.exit_code == 0
+        assert 'ADMET' in result.output
+        assert 'Absorption' in result.output or 'absorption' in result.output.lower()
+
+    def test_admet_no_options(self):
+        """Test admet without options shows error."""
+        runner = CliRunner()
+        result = runner.invoke(admet, [])
+        assert result.exit_code == 1
+        assert 'Error' in result.output
+
+    def test_admet_both_options_error(self):
+        """Test that using both --smiles and --input is an error."""
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as f:
+            f.write('SMILES\nCCO\n')
+            csv_path = f.name
+
+        try:
+            result = runner.invoke(admet, ['--smiles', 'CCO', '--input', csv_path])
+            assert result.exit_code == 1
+            assert 'Error' in result.output
+        finally:
+            if os.path.exists(csv_path):
+                os.remove(csv_path)
+
+    def test_admet_batch_mode(self):
+        """Test admet batch processing mode."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create input CSV
+            input_csv = os.path.join(tmpdir, 'input.csv')
+            output_csv = os.path.join(tmpdir, 'output.csv')
+
+            df = pd.DataFrame({
+                'SMILES': ['CCO', 'CC(=O)Oc1ccccc1C(=O)O', 'c1ccccc1'],
+                'Name': ['Ethanol', 'Aspirin', 'Benzene']
+            })
+            df.to_csv(input_csv, index=False)
+
+            # Run batch processing
+            result = runner.invoke(admet, ['--input', input_csv, '--output', output_csv])
+            assert result.exit_code == 0
+            assert os.path.exists(output_csv)
+
+            # Verify output CSV
+            result_df = pd.read_csv(output_csv)
+            assert len(result_df) == 3
+            assert 'SMILES' in result_df.columns
+            assert 'overall_score' in result_df.columns
+            assert 'caco2_class' in result_df.columns
+
+    def test_admet_batch_no_output_error(self):
+        """Test that batch mode requires --output."""
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as f:
+            f.write('SMILES\nCCO\n')
+            csv_path = f.name
+
+        try:
+            result = runner.invoke(admet, ['--input', csv_path])
+            assert result.exit_code == 1
+            assert 'Error' in result.output
+        finally:
+            if os.path.exists(csv_path):
+                os.remove(csv_path)
+
+    def test_admet_batch_invalid_csv(self):
+        """Test batch mode with invalid CSV (missing SMILES column)."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_csv = os.path.join(tmpdir, 'input.csv')
+            output_csv = os.path.join(tmpdir, 'output.csv')
+
+            # Create CSV without SMILES column
+            df = pd.DataFrame({
+                'Name': ['Ethanol', 'Aspirin'],
+                'Formula': ['C2H6O', 'C9H8O4']
+            })
+            df.to_csv(input_csv, index=False)
+
+            result = runner.invoke(admet, ['--input', input_csv, '--output', output_csv])
+            assert result.exit_code == 1
+            assert 'Error' in result.output
+
+    def test_admet_batch_with_invalid_smiles(self):
+        """Test batch mode handles invalid SMILES gracefully."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_csv = os.path.join(tmpdir, 'input.csv')
+            output_csv = os.path.join(tmpdir, 'output.csv')
+
+            df = pd.DataFrame({
+                'SMILES': ['CCO', 'INVALID_SMILES', 'c1ccccc1'],
+            })
+            df.to_csv(input_csv, index=False)
+
+            result = runner.invoke(admet, ['--input', input_csv, '--output', output_csv])
+            assert result.exit_code == 0  # Should complete despite error
+            assert os.path.exists(output_csv)
+
+            # Check that output has all rows (including the error one)
+            result_df = pd.read_csv(output_csv)
+            assert len(result_df) == 3
+
+
 class TestCLIIntegration:
     """Integration tests for CLI."""
 
@@ -260,6 +402,7 @@ class TestCLIIntegration:
         assert 'properties' in result.output
         assert 'lipinski' in result.output
         assert 'solubility' in result.output
+        assert 'admet' in result.output
 
     def test_predict_help(self):
         """Test that predict command has help."""
