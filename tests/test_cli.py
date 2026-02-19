@@ -7,7 +7,7 @@ import tempfile
 import json
 from click.testing import CliRunner
 import pytest
-from molscreen.cli import main, predict, properties, lipinski, solubility
+from molscreen.cli import main, predict, properties, lipinski, solubility, filter
 
 
 class TestCLIMain:
@@ -248,6 +248,170 @@ class TestSolubilityCommand:
         assert 'Error' in result.output
 
 
+class TestFilterCommand:
+    """Tests for filter command."""
+
+    def test_filter_help(self):
+        """Test that filter command has help."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--help'])
+        assert result.exit_code == 0
+        assert 'pharmacokinetic' in result.output.lower()
+        assert '--smiles' in result.output
+        assert '--input' in result.output
+        assert '--rules' in result.output
+
+    def test_filter_single_smiles_lipinski(self):
+        """Test filter with single SMILES and Lipinski rule."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--smiles', 'CCO', '--rules', 'lipinski'])
+        assert result.exit_code == 0
+        assert 'LIPINSKI' in result.output
+        assert 'PASS' in result.output
+
+    def test_filter_single_smiles_all_rules(self):
+        """Test filter with single SMILES and all rules."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--smiles', 'CC(=O)Oc1ccccc1C(=O)O', '--rules', 'all'])
+        assert result.exit_code == 0
+        assert 'LIPINSKI' in result.output
+        assert 'VEBER' in result.output
+        assert 'PAINS' in result.output
+        assert 'PASS' in result.output
+
+    def test_filter_multiple_rules(self):
+        """Test filter with multiple comma-separated rules."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--smiles', 'CCO', '--rules', 'lipinski,veber'])
+        assert result.exit_code == 0
+        assert 'LIPINSKI' in result.output
+        assert 'VEBER' in result.output
+
+    def test_filter_invalid_smiles(self):
+        """Test filter with invalid SMILES."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--smiles', 'INVALID'])
+        assert result.exit_code == 1
+        assert 'Error' in result.output
+
+    def test_filter_invalid_rule(self):
+        """Test filter with invalid rule name."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--smiles', 'CCO', '--rules', 'invalid_rule'])
+        assert result.exit_code == 1
+        assert 'Error' in result.output
+        assert 'Invalid rule' in result.output
+
+    def test_filter_quiet_mode(self):
+        """Test filter in quiet mode."""
+        runner = CliRunner()
+        result = runner.invoke(filter, ['--smiles', 'CCO', '--rules', 'lipinski', '--quiet'])
+        assert result.exit_code == 0
+        # Should have minimal output
+        assert 'MOLECULAR FILTER RESULTS' not in result.output
+
+    def test_filter_csv_output(self):
+        """Test filter with CSV output."""
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as f:
+            output_path = f.name
+
+        try:
+            result = runner.invoke(filter, [
+                '--smiles', 'CCO',
+                '--rules', 'lipinski',
+                '--output', output_path
+            ])
+            assert result.exit_code == 0
+            assert os.path.exists(output_path)
+
+            # Verify CSV content
+            with open(output_path, 'r') as f:
+                content = f.read()
+            assert 'SMILES' in content
+            assert 'CCO' in content
+            assert 'lipinski_Pass' in content
+        finally:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+
+    def test_filter_batch_csv_input(self):
+        """Test filter with CSV input file."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create input CSV
+            input_path = os.path.join(tmpdir, 'input.csv')
+            with open(input_path, 'w') as f:
+                f.write('SMILES\nCCO\nCC(=O)Oc1ccccc1C(=O)O\nc1ccccc1\n')
+
+            output_path = os.path.join(tmpdir, 'output.csv')
+
+            result = runner.invoke(filter, [
+                '--input', input_path,
+                '--output', output_path,
+                '--rules', 'all'
+            ])
+
+            assert result.exit_code == 0
+            assert os.path.exists(output_path)
+
+            # Verify output
+            with open(output_path, 'r') as f:
+                content = f.read()
+            assert 'CCO' in content
+            assert 'CC(=O)Oc1ccccc1C(=O)O' in content
+            assert 'c1ccccc1' in content
+
+    def test_filter_batch_csv_with_invalid(self):
+        """Test batch CSV filtering with invalid SMILES."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create input CSV with invalid SMILES
+            input_path = os.path.join(tmpdir, 'input.csv')
+            with open(input_path, 'w') as f:
+                f.write('SMILES\nCCO\nINVALID\nc1ccccc1\n')
+
+            output_path = os.path.join(tmpdir, 'output.csv')
+
+            result = runner.invoke(filter, [
+                '--input', input_path,
+                '--output', output_path,
+                '--rules', 'lipinski'
+            ])
+
+            assert result.exit_code == 0
+            assert os.path.exists(output_path)
+
+            # Verify output contains error information
+            with open(output_path, 'r') as f:
+                content = f.read()
+            assert 'INVALID' in content
+            assert 'Error' in content
+
+    def test_filter_no_arguments(self):
+        """Test filter without required arguments."""
+        runner = CliRunner()
+        result = runner.invoke(filter, [])
+        assert result.exit_code == 1
+        assert 'Error' in result.output
+
+    def test_filter_both_smiles_and_input(self):
+        """Test that specifying both --smiles and --input fails."""
+        runner = CliRunner()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv') as f:
+            f.write('SMILES\nCCO\n')
+            f.flush()
+
+            result = runner.invoke(filter, [
+                '--smiles', 'CCO',
+                '--input', f.name,
+                '--rules', 'lipinski'
+            ])
+
+            assert result.exit_code == 1
+            assert 'Error' in result.output
+
+
 class TestCLIIntegration:
     """Integration tests for CLI."""
 
@@ -260,6 +424,7 @@ class TestCLIIntegration:
         assert 'properties' in result.output
         assert 'lipinski' in result.output
         assert 'solubility' in result.output
+        assert 'filter' in result.output
 
     def test_predict_help(self):
         """Test that predict command has help."""
