@@ -283,3 +283,373 @@ def format_console_output(smiles: str,
     lines.append("\n" + "=" * 60)
 
     return "\n".join(lines)
+
+
+def generate_interactive_html_report(
+    results: list,
+    output_path: str,
+    title: str = "Molscreen Results"
+) -> str:
+    """
+    Generate an interactive HTML report with Plotly visualizations.
+
+    This function creates a self-contained HTML file with interactive charts
+    showing molecular property distributions and Lipinski chemical space.
+
+    Args:
+        results: List of dictionaries containing molecular properties.
+                 Each dictionary should have keys: smiles, mw/MW, logp/LogP,
+                 hbd/HBD, hba/HBA, tpsa/TPSA, and optionally qsar_score.
+                 Example: [{"smiles": "CCO", "mw": 46.07, "logp": -0.18,
+                          "hbd": 1, "hba": 1, "tpsa": 20.23, "qsar_score": -0.5}]
+        output_path: Path where the HTML file will be saved
+        title: Title for the report (default: "Molscreen Results")
+
+    Returns:
+        str: Path to the generated HTML file
+
+    Raises:
+        ImportError: If plotly is not installed
+        ValueError: If results list is invalid
+
+    Example:
+        >>> results = [
+        ...     {"smiles": "CCO", "mw": 46.07, "logp": -0.18,
+        ...      "hbd": 1, "hba": 1, "tpsa": 20.23},
+        ...     {"smiles": "c1ccccc1", "mw": 78.11, "logp": 1.69,
+        ...      "hbd": 0, "hba": 0, "tpsa": 0.0}
+        ... ]
+        >>> generate_interactive_html_report(results, "report.html")
+        'report.html'
+
+    Visualizations included:
+        1. Molecular Weight (MW) histogram
+        2. LogP vs MW scatter plot (Lipinski space with Ro5 boundaries)
+        3. TPSA distribution
+        4. QSAR score distribution (if qsar_score present in results)
+    """
+    # Import version info
+    from molscreen import __version__
+
+    # Check for plotly dependency
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError:
+        raise ImportError(
+            "plotly is required for interactive reports. "
+            "Install it with: pip install plotly"
+        )
+
+    # Validate input
+    if not isinstance(results, list):
+        raise ValueError("results must be a list of dictionaries")
+
+    # Handle empty results
+    if len(results) == 0:
+        # Create minimal HTML for empty results
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }}
+        .warning {{
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{title}</h1>
+        <div class="warning">
+            <strong>No data available:</strong> No molecular results provided for visualization.
+        </div>
+    </div>
+</body>
+</html>"""
+        with open(output_path, 'w') as f:
+            f.write(html_content)
+        return output_path
+
+    # Normalize property keys (handle both lowercase and uppercase)
+    def get_prop(result, key):
+        """Get property value, trying both lowercase and uppercase keys."""
+        return result.get(key.lower(), result.get(key.upper(), result.get(key)))
+
+    # Extract data from results
+    smiles_list = [get_prop(r, 'smiles') for r in results]
+    mw_list = [get_prop(r, 'mw') for r in results]
+    logp_list = [get_prop(r, 'logp') for r in results]
+    hbd_list = [get_prop(r, 'hbd') for r in results]
+    hba_list = [get_prop(r, 'hba') for r in results]
+    tpsa_list = [get_prop(r, 'tpsa') for r in results]
+
+    # Check if QSAR scores are present
+    has_qsar = any('qsar_score' in r for r in results)
+    qsar_list = [get_prop(r, 'qsar_score') for r in results] if has_qsar else None
+
+    # Determine subplot layout
+    n_plots = 4 if has_qsar else 3
+
+    # Create subplots
+    if has_qsar:
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                'Molecular Weight Distribution',
+                'Lipinski Chemical Space (LogP vs MW)',
+                'TPSA Distribution',
+                'QSAR Solubility Score Distribution'
+            ),
+            specs=[[{"type": "histogram"}, {"type": "scatter"}],
+                   [{"type": "histogram"}, {"type": "histogram"}]]
+        )
+    else:
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                'Molecular Weight Distribution',
+                'Lipinski Chemical Space (LogP vs MW)',
+                'TPSA Distribution',
+                ''
+            ),
+            specs=[[{"type": "histogram"}, {"type": "scatter"}],
+                   [{"type": "histogram"}, None]]
+        )
+
+    # 1. Molecular Weight Histogram
+    fig.add_trace(
+        go.Histogram(
+            x=mw_list,
+            nbinsx=20,
+            name='MW',
+            marker_color='#3498db',
+            hovertemplate='MW: %{x:.2f} g/mol<br>Count: %{y}<extra></extra>'
+        ),
+        row=1, col=1
+    )
+
+    # 2. LogP vs MW Scatter (Lipinski Space)
+    # Color by Lipinski compliance
+    colors = []
+    for i in range(len(results)):
+        mw_ok = mw_list[i] <= 500 if mw_list[i] is not None else False
+        logp_ok = logp_list[i] <= 5 if logp_list[i] is not None else False
+        hbd_ok = hbd_list[i] <= 5 if hbd_list[i] is not None else False
+        hba_ok = hba_list[i] <= 10 if hba_list[i] is not None else False
+        passes = all([mw_ok, logp_ok, hbd_ok, hba_ok])
+        colors.append('#27ae60' if passes else '#e74c3c')
+
+    fig.add_trace(
+        go.Scatter(
+            x=mw_list,
+            y=logp_list,
+            mode='markers',
+            name='Molecules',
+            marker=dict(
+                size=8,
+                color=colors,
+                line=dict(width=1, color='white')
+            ),
+            text=smiles_list,
+            hovertemplate='<b>%{text}</b><br>MW: %{x:.2f} g/mol<br>LogP: %{y:.2f}<extra></extra>'
+        ),
+        row=1, col=2
+    )
+
+    # Add Lipinski Rule of Five boundary lines
+    # Vertical line at MW = 500
+    valid_mw = [m for m in mw_list if m is not None]
+    max_mw = max(valid_mw) if valid_mw else 500
+    valid_logp = [lp for lp in logp_list if lp is not None]
+    max_logp = max(valid_logp) if valid_logp else 5
+
+    fig.add_trace(
+        go.Scatter(
+            x=[500, 500],
+            y=[-5, max(max_logp, 5) + 1],
+            mode='lines',
+            name='MW ≤ 500',
+            line=dict(color='red', width=2, dash='dash'),
+            showlegend=True,
+            hovertemplate='Lipinski MW limit<extra></extra>'
+        ),
+        row=1, col=2
+    )
+
+    # Horizontal line at LogP = 5
+    fig.add_trace(
+        go.Scatter(
+            x=[0, max(max_mw, 500) + 50],
+            y=[5, 5],
+            mode='lines',
+            name='LogP ≤ 5',
+            line=dict(color='red', width=2, dash='dash'),
+            showlegend=True,
+            hovertemplate='Lipinski LogP limit<extra></extra>'
+        ),
+        row=1, col=2
+    )
+
+    # 3. TPSA Distribution
+    fig.add_trace(
+        go.Histogram(
+            x=tpsa_list,
+            nbinsx=20,
+            name='TPSA',
+            marker_color='#9b59b6',
+            hovertemplate='TPSA: %{x:.2f} Ų<br>Count: %{y}<extra></extra>'
+        ),
+        row=2, col=1
+    )
+
+    # 4. QSAR Score Distribution (if available)
+    if has_qsar:
+        fig.add_trace(
+            go.Histogram(
+                x=qsar_list,
+                nbinsx=20,
+                name='QSAR Score',
+                marker_color='#e67e22',
+                hovertemplate='QSAR Score: %{x:.2f}<br>Count: %{y}<extra></extra>'
+            ),
+            row=2, col=2
+        )
+
+    # Update axes labels
+    fig.update_xaxes(title_text="Molecular Weight (g/mol)", row=1, col=1)
+    fig.update_yaxes(title_text="Count", row=1, col=1)
+
+    fig.update_xaxes(title_text="Molecular Weight (g/mol)", row=1, col=2)
+    fig.update_yaxes(title_text="LogP", row=1, col=2)
+
+    fig.update_xaxes(title_text="TPSA (Ų)", row=2, col=1)
+    fig.update_yaxes(title_text="Count", row=2, col=1)
+
+    if has_qsar:
+        fig.update_xaxes(title_text="QSAR Score (LogS)", row=2, col=2)
+        fig.update_yaxes(title_text="Count", row=2, col=2)
+
+    # Update layout
+    fig.update_layout(
+        title_text=title,
+        title_font_size=24,
+        showlegend=True,
+        height=800,
+        template='plotly_white'
+    )
+
+    # Generate HTML with CDN-based plotly.js
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }}
+        .summary {{
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }}
+        .summary p {{
+            margin: 5px 0;
+        }}
+        .legend {{
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e8f4f8;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }}
+        .legend p {{
+            margin: 5px 0;
+        }}
+        .footer {{
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #ecf0f1;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="summary">
+            <p><strong>Total Molecules:</strong> {len(results)}</p>
+            <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        </div>
+
+        <div class="legend">
+            <p><strong>Lipinski's Rule of Five:</strong></p>
+            <p>🟢 Green points: Pass all Lipinski criteria (MW ≤ 500, LogP ≤ 5, HBD ≤ 5, HBA ≤ 10)</p>
+            <p>🔴 Red points: Fail one or more Lipinski criteria</p>
+            <p>Red dashed lines: Lipinski boundary limits</p>
+        </div>
+
+        <div id="plotly-div"></div>
+
+        <div class="footer">
+            Generated by molscreen v{__version__} with Plotly {go.__version__ if hasattr(go, '__version__') else '6.5+'}
+        </div>
+    </div>
+
+    <script>
+        var plotlyData = {fig.to_json()};
+        Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {{responsive: true}});
+    </script>
+</body>
+</html>"""
+
+    # Write to file
+    with open(output_path, 'w') as f:
+        f.write(html_content)
+
+    return output_path
