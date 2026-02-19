@@ -1,0 +1,135 @@
+{
+  "task": "Pythonパッケージ molscreen を一から完全実装してください。SMILES文字列を入力として受け取り、RDKitで基本物性を計算（分子量、logP、HBD/HBA、Lipinski則）、scikit-learnで溶解度予測（QSARモデル、Delaney/ESOLデータセット使用）、HTML/JSONレポート生成、CLIとPython APIの両方を提供する。",
+  "subtasks": [
+    {
+      "id": 1,
+      "description": "プロジェクト構造とpyproject.tomlを作成し、依存関係を定義",
+      "files_to_modify": [],
+      "files_to_create": [
+        "pyproject.toml",
+        "molscreen/__init__.py"
+      ],
+      "test_strategy": "pyproject.tomlが正しく解析され、パッケージメタデータが適切に定義されているか確認",
+      "complexity": "low"
+    },
+    {
+      "id": 2,
+      "description": "仮想環境(.venv)を作成し、依存関係をインストール",
+      "files_to_modify": [],
+      "files_to_create": [".venv/"],
+      "test_strategy": "pip list で RDKit, scikit-learn, pandas, Click, Jinja2 がインストールされているか確認",
+      "complexity": "low"
+    },
+    {
+      "id": 3,
+      "description": "properties.py: RDKitを使った基本物性計算モジュールを実装（分子量、logP、HBD/HBA、Lipinski則チェック）",
+      "files_to_modify": [],
+      "files_to_create": [
+        "molscreen/properties.py"
+      ],
+      "test_strategy": "アスピリン（CC(=O)Oc1ccccc1C(=O)O）で分子量≈180、logP、HBD/HBA、Lipinski合否を計算",
+      "complexity": "medium"
+    },
+    {
+      "id": 4,
+      "description": "test_properties.py: properties.pyのユニットテストを実装",
+      "files_to_modify": [],
+      "files_to_create": [
+        "tests/__init__.py",
+        "tests/test_properties.py"
+      ],
+      "test_strategy": "pytest tests/test_properties.py -v で全テストがパス",
+      "complexity": "medium"
+    },
+    {
+      "id": 5,
+      "description": "models.py: scikit-learnで溶解度予測QSARモデルを実装（Delaney/ESOLデータセット使用）",
+      "files_to_modify": [],
+      "files_to_create": [
+        "molscreen/models.py",
+        "molscreen/data/delaney.csv"
+      ],
+      "test_strategy": "モデルの訓練と予測が正常に動作し、reasonable な予測値を返すか確認",
+      "complexity": "high"
+    },
+    {
+      "id": 6,
+      "description": "test_models.py: models.pyのユニットテストを実装",
+      "files_to_modify": [],
+      "files_to_create": [
+        "tests/test_models.py"
+      ],
+      "test_strategy": "pytest tests/test_models.py -v で全テストがパス",
+      "complexity": "medium"
+    },
+    {
+      "id": 7,
+      "description": "report.py: HTML/JSONレポート生成モジュールを実装（Jinja2テンプレート使用）",
+      "files_to_modify": [],
+      "files_to_create": [
+        "molscreen/report.py",
+        "molscreen/templates/report.html.j2"
+      ],
+      "test_strategy": "サンプル分子データでHTML/JSONレポートが生成され、適切な内容が含まれるか確認",
+      "complexity": "medium"
+    },
+    {
+      "id": 8,
+      "description": "cli.py: Click を使ったCLIインターフェースを実装（molscreen predict コマンド）",
+      "files_to_modify": [
+        "molscreen/__init__.py"
+      ],
+      "files_to_create": [
+        "molscreen/cli.py"
+      ],
+      "test_strategy": "molscreen predict CC(=O)Oc1ccccc1C(=O)O が実行でき、Lipinski則の合否が出力される",
+      "complexity": "medium"
+    },
+    {
+      "id": 9,
+      "description": "test_cli.py: CLIのユニットテストを実装",
+      "files_to_modify": [],
+      "files_to_create": [
+        "tests/test_cli.py"
+      ],
+      "test_strategy": "pytest tests/test_cli.py -v で全テストがパス、CLIが正しく動作",
+      "complexity": "medium"
+    },
+    {
+      "id": 10,
+      "description": "README.mdを完成させ、使用例とインストール手順を記載",
+      "files_to_modify": [
+        "README.md"
+      ],
+      "files_to_create": [],
+      "test_strategy": "README.mdの手順に従ってインストールと実行が可能か確認",
+      "complexity": "low"
+    },
+    {
+      "id": 11,
+      "description": "統合テスト: pytest tests/ -v で全テストが通ることを確認",
+      "files_to_modify": [],
+      "files_to_create": [],
+      "test_strategy": "pytest tests/ -v ですべてのテストがパスし、カバレッジが十分であることを確認",
+      "complexity": "low"
+    },
+    {
+      "id": 12,
+      "description": "完成確認: molscreen predict でアスピリンの予測を実行し、すべての要件が満たされているか検証",
+      "files_to_modify": [],
+      "files_to_create": [],
+      "test_strategy": "molscreen predict CC(=O)Oc1ccccc1C(=O)O を実行し、分子量、logP、HBD/HBA、Lipinski合否、溶解度予測が出力される",
+      "complexity": "low"
+    }
+  ],
+  "estimated_iterations": 12,
+  "risks": [
+    "RDKitのインストールが複雑な場合がある（conda推奨だがpipで試みる）",
+    "Delaney/ESOLデータセットの入手と前処理に時間がかかる可能性",
+    "QSARモデルの特徴量エンジニアリング（分子記述子の選択）が重要",
+    "scikit-learnモデルの訓練データが不足している場合、予測精度が低い可能性",
+    "HTMLレポートのテンプレート設計が複雑になる可能性",
+    "CLIとPython APIの両方で一貫したインターフェースを提供する必要がある"
+  ],
+  "approach": "ボトムアップ方式: まずpyproject.tomlでパッケージ構造を定義し、依存関係をインストール。次に各モジュール（properties, models, report）を個別に実装・テスト。最後にCLIで統合し、エンドツーエンドでの動作を確認。各段階で小さなコミットを作成し、テストを必ず通してから次に進む。"
+}
