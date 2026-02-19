@@ -6,6 +6,7 @@ This module provides the CLI commands for molecular screening.
 
 import sys
 import click
+import pandas as pd
 from molscreen.properties import calculate_properties, check_lipinski, MoleculeError
 from molscreen.models import predict_solubility
 from molscreen.report import (
@@ -13,6 +14,12 @@ from molscreen.report import (
     format_console_output,
     save_json_report,
     save_html_report
+)
+from molscreen.scaffold import (
+    get_murcko_scaffold,
+    get_generic_scaffold,
+    group_by_scaffold,
+    scaffold_diversity_score,
 )
 from molscreen import __version__
 
@@ -201,6 +208,131 @@ def solubility(smiles):
     except MoleculeError as e:
         click.echo(f"Error: Invalid SMILES string: {e}", err=True)
         sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--smiles', '-s', type=str,
+              help='Single SMILES string to analyze')
+@click.option('--input', '-i', 'input_file', type=click.Path(exists=True),
+              help='Input CSV file with SMILES column')
+@click.option('--output', '-o', 'output_file', type=click.Path(),
+              help='Output CSV file for results')
+@click.option('--diversity', '-d', is_flag=True,
+              help='Calculate and display scaffold diversity score')
+def scaffold(smiles, input_file, output_file, diversity):
+    """
+    Analyze molecular scaffolds (Bemis-Murcko framework).
+
+    This command extracts and analyzes the core scaffold structures of molecules.
+    Scaffolds represent the ring systems and linkers with side chains removed.
+
+    Modes:
+
+    1. Single molecule analysis (--smiles):
+       Display Murcko and generic scaffolds for one molecule
+
+    2. Batch processing (--input/--output):
+       Process CSV file and save scaffold information
+
+    3. Diversity analysis (--input --diversity):
+       Calculate scaffold diversity score for a molecule set
+
+    Examples:
+
+        molscreen scaffold --smiles "Cc1ccccc1"
+
+        molscreen scaffold --input molecules.csv --output scaffolds.csv
+
+        molscreen scaffold --input molecules.csv --diversity
+    """
+    try:
+        # Mode 1: Single SMILES analysis
+        if smiles:
+            murcko = get_murcko_scaffold(smiles)
+            generic = get_generic_scaffold(smiles)
+
+            click.echo("Scaffold Analysis:")
+            click.echo(f"  SMILES:           {smiles}")
+            click.echo(f"  Murcko Scaffold:  {murcko if murcko else 'None (acyclic)'}")
+            click.echo(f"  Generic Scaffold: {generic if generic else 'None (acyclic)'}")
+
+            sys.exit(0)
+
+        # Mode 2 & 3: Batch processing from CSV
+        elif input_file:
+            # Read input CSV
+            try:
+                df = pd.read_csv(input_file)
+            except Exception as e:
+                click.echo(f"Error: Failed to read CSV file: {e}", err=True)
+                sys.exit(1)
+
+            # Find SMILES column (case-insensitive)
+            smiles_col = None
+            for col in df.columns:
+                if col.lower() == 'smiles':
+                    smiles_col = col
+                    break
+
+            if smiles_col is None:
+                click.echo("Error: CSV file must contain a 'SMILES' column", err=True)
+                sys.exit(1)
+
+            smiles_list = df[smiles_col].tolist()
+
+            # Mode 3: Diversity score
+            if diversity:
+                score = scaffold_diversity_score(smiles_list)
+                click.echo("Scaffold Diversity Analysis:")
+                click.echo(f"  Input file:       {input_file}")
+                click.echo(f"  Total molecules:  {len(smiles_list)}")
+                click.echo(f"  Diversity score:  {score:.3f}")
+                click.echo(f"\n  Interpretation:")
+                if score >= 0.8:
+                    click.echo("    High diversity - molecules have varied scaffolds")
+                elif score >= 0.5:
+                    click.echo("    Moderate diversity - some scaffold repetition")
+                else:
+                    click.echo("    Low diversity - many molecules share scaffolds")
+
+                sys.exit(0)
+
+            # Mode 2: Process and output scaffold data
+            else:
+                if not output_file:
+                    click.echo("Error: --output required when processing input file without --diversity", err=True)
+                    sys.exit(1)
+
+                # Calculate scaffolds for all molecules
+                results = []
+                for mol_smiles in smiles_list:
+                    murcko = get_murcko_scaffold(mol_smiles)
+                    generic = get_generic_scaffold(mol_smiles)
+                    results.append({
+                        'SMILES': mol_smiles,
+                        'Murcko_Scaffold': murcko if murcko else '',
+                        'Generic_Scaffold': generic if generic else '',
+                    })
+
+                # Save to output CSV
+                output_df = pd.DataFrame(results)
+                output_df.to_csv(output_file, index=False)
+
+                click.echo(f"Scaffold analysis complete:")
+                click.echo(f"  Input:  {input_file}")
+                click.echo(f"  Output: {output_file}")
+                click.echo(f"  Processed {len(results)} molecules")
+
+                sys.exit(0)
+
+        else:
+            click.echo("Error: Must specify either --smiles or --input", err=True)
+            click.echo("Run 'molscreen scaffold --help' for usage information", err=True)
+            sys.exit(1)
+
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
