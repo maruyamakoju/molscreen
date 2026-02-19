@@ -31,6 +31,48 @@ python3 -m venv .venv
 .venv/bin/pip install -e .[dev]
 ```
 
+## Publishing to PyPI
+
+This project uses GitHub Actions to automatically publish to PyPI when a new version tag is pushed.
+
+### Setup PyPI Token
+
+Before publishing, you need to configure the PyPI API token as a GitHub secret:
+
+1. Generate a PyPI API token:
+   - Go to https://pypi.org/manage/account/token/
+   - Create a new API token with upload permissions
+   - Copy the token (it starts with `pypi-`)
+
+2. Add the token to GitHub Secrets:
+   - Go to your GitHub repository settings
+   - Navigate to **Settings** → **Secrets and variables** → **Actions**
+   - Click **New repository secret**
+   - Name: `PYPI_TOKEN`
+   - Value: Paste your PyPI API token
+   - Click **Add secret**
+
+### Publishing a New Release
+
+To publish a new version to PyPI:
+
+```bash
+# Update version in pyproject.toml if needed
+# Commit your changes
+git add .
+git commit -m "chore: bump version to X.Y.Z"
+
+# Create and push a version tag
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The GitHub Actions workflow will automatically:
+1. Build the package
+2. Upload it to PyPI
+
+You can monitor the workflow progress in the **Actions** tab of your GitHub repository.
+
 ## Quick Start
 
 ### Command Line Interface
