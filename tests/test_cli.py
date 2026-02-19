@@ -300,3 +300,233 @@ class TestCLIIntegration:
                 html = f.read()
             assert 'PASSES Lipinski' in html
             assert 'Solubility' in html
+
+
+class TestSimilarCommand:
+    """Tests for similar command."""
+
+    def test_similar_command_basic(self):
+        """Test similar command with basic CSV input."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test CSV file
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')
+                f.write('CCO\n')
+                f.write('CCCO\n')
+                f.write('c1ccccc1\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path,
+                '--top', '2'
+            ])
+
+            assert result.exit_code == 0
+            assert 'smiles,similarity_score' in result.output
+            assert 'CCO' in result.output
+
+    def test_similar_command_lowercase_smiles_column(self):
+        """Test with lowercase 'smiles' column name."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            with open(csv_path, 'w') as f:
+                f.write('smiles\n')  # Lowercase
+                f.write('CCO\n')
+                f.write('CCCO\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path
+            ])
+
+            assert result.exit_code == 0
+            assert 'CCO' in result.output
+
+    def test_similar_command_top_k(self):
+        """Test that --top parameter works correctly."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')
+                for smiles in ['CCO', 'CCCO', 'CCCCO', 'c1ccccc1', 'CC']:
+                    f.write(f'{smiles}\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path,
+                '--top', '2'
+            ])
+
+            assert result.exit_code == 0
+            # Count number of data rows (excluding header)
+            lines = [l for l in result.output.strip().split('\n') if l]
+            # Should have header + 2 data rows
+            assert len(lines) == 3
+
+    def test_similar_command_output_file(self):
+        """Test writing results to output file."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            output_path = os.path.join(tmpdir, 'results.csv')
+
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')
+                f.write('CCO\n')
+                f.write('CCCO\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path,
+                '--output', output_path
+            ])
+
+            assert result.exit_code == 0
+            assert os.path.exists(output_path)
+
+            # Verify output file content
+            with open(output_path, 'r') as f:
+                content = f.read()
+            assert 'smiles,similarity_score' in content
+            assert 'CCO' in content
+
+    def test_similar_command_invalid_query(self):
+        """Test with invalid query SMILES."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')
+                f.write('CCO\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'INVALID_SMILES',
+                '--candidates', csv_path
+            ])
+
+            assert result.exit_code == 1
+            assert 'Error' in result.output
+
+    def test_similar_command_file_not_found(self):
+        """Test with non-existent candidates file."""
+        runner = CliRunner()
+
+        result = runner.invoke(main, [
+            'similar',
+            '--query', 'CCO',
+            '--candidates', '/nonexistent/file.csv'
+        ])
+
+        # Click returns exit code 2 for invalid parameter (file doesn't exist)
+        assert result.exit_code in [1, 2]
+        assert 'Error' in result.output or 'does not exist' in result.output
+
+    def test_similar_command_missing_smiles_column(self):
+        """Test with CSV missing SMILES column."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'bad.csv')
+            with open(csv_path, 'w') as f:
+                f.write('compound,value\n')
+                f.write('A,1\n')
+                f.write('B,2\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path
+            ])
+
+            assert result.exit_code == 1
+            assert 'SMILES' in result.output or 'smiles' in result.output
+
+    def test_similar_command_help(self):
+        """Test similar command help."""
+        runner = CliRunner()
+        result = runner.invoke(main, ['similar', '--help'])
+
+        assert result.exit_code == 0
+        assert 'similar' in result.output.lower()
+        assert 'query' in result.output.lower()
+        assert 'candidates' in result.output.lower()
+
+    def test_similar_command_identical_molecule_first(self):
+        """Test that identical molecule ranks first with similarity 1.0."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')
+                f.write('CCCO\n')
+                f.write('CCO\n')  # Identical to query
+                f.write('c1ccccc1\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path,
+                '--top', '3'
+            ])
+
+            assert result.exit_code == 0
+            # First result should be the identical molecule
+            lines = result.output.strip().split('\n')
+            # Second line (first data row after header) should contain CCO with 1.0
+            assert 'CCO,1.0' in lines[1]
+
+    def test_similar_command_empty_candidates(self):
+        """Test with empty candidates file."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'empty.csv')
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')  # Header only
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path
+            ])
+
+            assert result.exit_code == 1
+            assert 'No valid SMILES' in result.output
+
+    def test_similar_command_with_invalid_candidates(self):
+        """Test that invalid candidates are skipped."""
+        runner = CliRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = os.path.join(tmpdir, 'molecules.csv')
+            with open(csv_path, 'w') as f:
+                f.write('SMILES\n')
+                f.write('CCO\n')
+                f.write('INVALID\n')
+                f.write('CCCO\n')
+
+            result = runner.invoke(main, [
+                'similar',
+                '--query', 'CCO',
+                '--candidates', csv_path
+            ])
+
+            assert result.exit_code == 0
+            # Should succeed and return valid candidates only
+            assert 'CCO' in result.output
+            assert 'CCCO' in result.output
